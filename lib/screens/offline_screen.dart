@@ -15,7 +15,6 @@ class OfflineScreen extends StatelessWidget {
     final pending = state.pendingSyncCount;
 
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: simpleAppBar(''),
       body: Center(
         child: Padding(

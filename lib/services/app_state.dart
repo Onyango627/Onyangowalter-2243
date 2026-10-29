@@ -1,9 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:crypto/crypto.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/customer.dart';
@@ -19,8 +23,6 @@ class CartLine {
 /// Single source of truth for the app. Everything is persisted locally in
 /// SharedPreferences, so the app keeps working with no internet connection.
 class AppState extends ChangeNotifier {
-  static const _salt = 'pos_retail_pro_v1';
-
   SharedPreferences? _prefs;
   StreamSubscription? _connSub;
 
@@ -39,7 +41,6 @@ class AppState extends ChangeNotifier {
   String businessType = 'Retail Store';
   String ownerName = 'Business Owner';
   String account = 'owner@business.com';
-  String _passwordHash = _hash('password123');
   int themeColor = 0xFF1E6FE0;
   double taxRate = 0.18;
   int defaultReorder = 20;
@@ -52,18 +53,15 @@ class AppState extends ChangeNotifier {
 
   // ---- session / connectivity ----
   bool loggedIn = false;
+  String? authError;
   bool forceOffline = false;
   bool networkOnline = true;
 
   bool get isOnline => networkOnline && !forceOffline;
   Color get primary => Color(themeColor);
 
-  static String _hash(String pw) =>
-      sha256.convert(utf8.encode('$_salt:$pw')).toString();
-
-  
   // Load / save
-  
+
   Future<void> load() async {
     _prefs = await SharedPreferences.getInstance();
     final p = _prefs!;
@@ -87,11 +85,20 @@ class AppState extends ChangeNotifier {
     businessType = p.getString('businessType') ?? businessType;
     ownerName = p.getString('ownerName') ?? ownerName;
     account = p.getString('account') ?? account;
-    _passwordHash = p.getString('passwordHash') ?? _passwordHash;
     themeColor = p.getInt('themeColor') ?? themeColor;
     taxRate = p.getDouble('taxRate') ?? taxRate;
     defaultReorder = p.getInt('defaultReorder') ?? defaultReorder;
-    loggedIn = p.getBool('loggedIn') ?? false;
+    final offlineSessionEmail = p.getString('offlineSessionEmail');
+    final offlineAccount = offlineSessionEmail == null
+        ? null
+        : _offlineAccounts()[offlineSessionEmail];
+    loggedIn =
+        FirebaseAuth.instance.currentUser != null ||
+        (offlineSessionEmail != null && offlineAccount != null);
+    if (FirebaseAuth.instance.currentUser == null && offlineAccount != null) {
+      account = offlineSessionEmail!;
+      ownerName = offlineAccount['name'] as String? ?? account;
+    }
     final em = p.getString('enabledMethods');
     if (em != null) {
       enabledMethods = Map<String, bool>.from(jsonDecode(em) as Map);
@@ -109,11 +116,46 @@ class AppState extends ChangeNotifier {
 
   void _seed() {
     products = [
-      Product(id: 'p1', name: 'Coca Cola 500ml', price: 2500, stock: 50, reorder: 20, category: 'Beverages'),
-      Product(id: 'p2', name: 'Sprite 500ml', price: 2500, stock: 40, reorder: 20, category: 'Beverages'),
-      Product(id: 'p3', name: 'Water 500ml', price: 1500, stock: 100, reorder: 30, category: 'Beverages'),
-      Product(id: 'p4', name: 'Bread', price: 3000, stock: 30, reorder: 10, category: 'Groceries'),
-      Product(id: 'p5', name: 'Chips', price: 2000, stock: 45, reorder: 15, category: 'Snacks'),
+      Product(
+        id: 'p1',
+        name: 'Coca Cola 500ml',
+        price: 2500,
+        stock: 50,
+        reorder: 20,
+        category: 'Beverages',
+      ),
+      Product(
+        id: 'p2',
+        name: 'Sprite 500ml',
+        price: 2500,
+        stock: 40,
+        reorder: 20,
+        category: 'Beverages',
+      ),
+      Product(
+        id: 'p3',
+        name: 'Water 500ml',
+        price: 1500,
+        stock: 100,
+        reorder: 30,
+        category: 'Beverages',
+      ),
+      Product(
+        id: 'p4',
+        name: 'Bread',
+        price: 3000,
+        stock: 30,
+        reorder: 10,
+        category: 'Groceries',
+      ),
+      Product(
+        id: 'p5',
+        name: 'Chips',
+        price: 2000,
+        stock: 45,
+        reorder: 15,
+        category: 'Snacks',
+      ),
     ];
     customers = [
       Customer(id: 'c1', name: 'John Mwangi', phone: '+256 700 123 456'),
@@ -129,16 +171,26 @@ class AppState extends ChangeNotifier {
       final p = products[d % products.length];
       final qty = 8 + (d * 7) % 15;
       final sub = p.price * qty;
-      sales.add(Sale(
-        id: 'seed$d',
-        date: DateTime(now.year, now.month, now.day, 10, 15).subtract(Duration(days: d)),
-        items: [SaleItem(productId: p.id, name: p.name, price: p.price, qty: qty)],
-        customer: 'Walk-in Customer',
-        method: methods[d % 3],
-        subtotal: sub,
-        tax: sub * taxRate,
-        total: sub * (1 + taxRate),
-      ));
+      sales.add(
+        Sale(
+          id: 'seed$d',
+          date: DateTime(
+            now.year,
+            now.month,
+            now.day,
+            10,
+            15,
+          ).subtract(Duration(days: d)),
+          items: [
+            SaleItem(productId: p.id, name: p.name, price: p.price, qty: qty),
+          ],
+          customer: 'Walk-in Customer',
+          method: methods[d % 3],
+          subtotal: sub,
+          tax: sub * taxRate,
+          total: sub * (1 + taxRate),
+        ),
+      );
     }
     _save();
   }
@@ -146,14 +198,22 @@ class AppState extends ChangeNotifier {
   Future<void> _save() async {
     final p = _prefs;
     if (p == null) return;
-    await p.setString('products', jsonEncode(products.map((e) => e.toJson()).toList()));
-    await p.setString('customers', jsonEncode(customers.map((e) => e.toJson()).toList()));
-    await p.setString('sales', jsonEncode(sales.map((e) => e.toJson()).toList()));
+    await p.setString(
+      'products',
+      jsonEncode(products.map((e) => e.toJson()).toList()),
+    );
+    await p.setString(
+      'customers',
+      jsonEncode(customers.map((e) => e.toJson()).toList()),
+    );
+    await p.setString(
+      'sales',
+      jsonEncode(sales.map((e) => e.toJson()).toList()),
+    );
     await p.setString('businessName', businessName);
     await p.setString('businessType', businessType);
     await p.setString('ownerName', ownerName);
     await p.setString('account', account);
-    await p.setString('passwordHash', _passwordHash);
     await p.setInt('themeColor', themeColor);
     await p.setDouble('taxRate', taxRate);
     await p.setInt('defaultReorder', defaultReorder);
@@ -181,38 +241,294 @@ class AppState extends ChangeNotifier {
     super.dispose();
   }
 
+  // Authentication
+  static Future<void>? _googleSignInInitialization;
 
-  // Auth (local only - see README for production hardening)
-  
-  bool login(String id, String pw, {required bool remember}) {
-    if (id.trim().toLowerCase() == account.toLowerCase() &&
-        _hash(pw) == _passwordHash) {
-      loggedIn = remember;
-      _save();
+  Future<bool> login(
+    String email,
+    String password, {
+    required bool remember,
+  }) async {
+    authError = null;
+    final normalizedEmail = _normalizeEmail(email);
+    final offlineAccount = _offlineAccounts()[normalizedEmail];
+    if (!isOnline && offlineAccount != null) {
+      if (_verifyOfflinePassword(offlineAccount, password)) {
+        await _setOfflineUser(normalizedEmail, offlineAccount);
+        return true;
+      }
+      authError = 'Email or password is incorrect.';
       notifyListeners();
-      return true;
+      return false;
     }
-    return false;
+    try {
+      authError = null;
+      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: normalizedEmail,
+        password: password,
+      );
+      await _prefs?.remove('offlineSessionEmail');
+      _setAuthenticatedUser(credential.user);
+      return true;
+    } on FirebaseAuthException catch (e) {
+      if ((e.code == 'network-request-failed' || e.code == 'user-not-found') &&
+          offlineAccount != null &&
+          _verifyOfflinePassword(offlineAccount, password)) {
+        await _setOfflineUser(normalizedEmail, offlineAccount);
+        return true;
+      }
+      authError = _authMessage(e.code);
+      notifyListeners();
+      return false;
+    } catch (_) {
+      authError = 'Could not connect to authentication. Please try again.';
+      notifyListeners();
+      return false;
+    }
   }
 
-  void signUp(String name, String id, String pw) {
-    ownerName = name;
-    account = id.trim();
-    _passwordHash = _hash(pw);
+  Future<bool> signUp(String name, String email, String password) async {
+    final normalizedEmail = _normalizeEmail(email);
+    if (!isOnline) {
+      final created = await _createOfflineAccount(
+        name.trim(),
+        normalizedEmail,
+        password,
+      );
+      if (!created) return false;
+      await _setOfflineUser(
+        normalizedEmail,
+        _offlineAccounts()[normalizedEmail]!,
+      );
+      return true;
+    }
+    try {
+      authError = null;
+      final credential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+            email: normalizedEmail,
+            password: password,
+          );
+      try {
+        await credential.user?.updateDisplayName(name.trim());
+      } catch (_) {
+        // Account creation succeeds even if the display name update fails.
+      }
+      await _prefs?.remove('offlineSessionEmail');
+      _setAuthenticatedUser(credential.user, fallbackName: name.trim());
+      return true;
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'network-request-failed') {
+        final created = await _createOfflineAccount(
+          name.trim(),
+          normalizedEmail,
+          password,
+        );
+        if (!created) return false;
+        await _setOfflineUser(
+          normalizedEmail,
+          _offlineAccounts()[normalizedEmail]!,
+        );
+        return true;
+      }
+      authError = _authMessage(e.code);
+      notifyListeners();
+      return false;
+    } catch (_) {
+      authError = 'Could not connect to authentication. Please try again.';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> signInWithGoogle() async {
+    try {
+      authError = null;
+      if (kIsWeb) {
+        final credential = await FirebaseAuth.instance.signInWithPopup(
+          GoogleAuthProvider(),
+        );
+        await _prefs?.remove('offlineSessionEmail');
+        _setAuthenticatedUser(credential.user);
+        return true;
+      }
+
+      _googleSignInInitialization ??= GoogleSignIn.instance.initialize();
+      await _googleSignInInitialization;
+      final account = await GoogleSignIn.instance.authenticate();
+      final idToken = account.authentication.idToken;
+      if (idToken == null) {
+        authError = 'Google sign-in did not return an ID token.';
+        notifyListeners();
+        return false;
+      }
+      final credential = GoogleAuthProvider.credential(idToken: idToken);
+      final result = await FirebaseAuth.instance.signInWithCredential(
+        credential,
+      );
+      await _prefs?.remove('offlineSessionEmail');
+      _setAuthenticatedUser(result.user);
+      return true;
+    } on FirebaseAuthException catch (e) {
+      authError = _authMessage(e.code);
+      notifyListeners();
+      return false;
+    } on GoogleSignInException catch (e) {
+      if (e.code != GoogleSignInExceptionCode.canceled) {
+        authError = e.description ?? 'Google sign-in failed (${e.code.name}).';
+      }
+      notifyListeners();
+      return false;
+    } catch (_) {
+      authError = 'Google sign-in failed. Check your connection and try again.';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Sends Firebase's password reset email for an online email account.
+  /// Offline-only accounts have no remote identity provider to recover through.
+  Future<String?> sendPasswordResetEmail(String email) async {
+    final normalizedEmail = _normalizeEmail(email);
+    if (normalizedEmail.isEmpty ||
+        !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(normalizedEmail)) {
+      return 'Enter a valid email address.';
+    }
+    if (_offlineAccounts().containsKey(normalizedEmail)) {
+      return 'This account was created offline and is stored only on this device. It has no email password reset option.';
+    }
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: normalizedEmail);
+      return null;
+    } on FirebaseAuthException catch (e) {
+      return switch (e.code) {
+        'invalid-email' => 'Enter a valid email address.',
+        'user-not-found' => 'No account was found for that email address.',
+        'network-request-failed' =>
+          'Check your internet connection and try again.',
+        'too-many-requests' => 'Too many attempts. Wait a moment and try again.',
+        _ => 'Could not send the reset email. Please try again (${e.code}).',
+      };
+    } catch (_) {
+      return 'Could not send the reset email. Check your connection and try again.';
+    }
+  }
+
+  void _setAuthenticatedUser(User? user, {String? fallbackName}) {
+    if (user == null) return;
     loggedIn = true;
+    account = user.email ?? account;
+    ownerName = user.displayName?.trim().isNotEmpty == true
+        ? user.displayName!.trim()
+        : fallbackName ?? account;
     _save();
     notifyListeners();
   }
 
-  void logout() {
+  String _normalizeEmail(String email) => email.trim().toLowerCase();
+
+  Map<String, Map<String, dynamic>> _offlineAccounts() {
+    final raw = _prefs?.getString('offlineAccounts');
+    if (raw == null) return {};
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      return decoded.map(
+        (email, values) =>
+            MapEntry(email, Map<String, dynamic>.from(values as Map)),
+      );
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<bool> _createOfflineAccount(
+    String name,
+    String email,
+    String password,
+  ) async {
+    authError = null;
+    if (password.length < 6) {
+      authError = 'Password must be at least 6 characters.';
+      notifyListeners();
+      return false;
+    }
+    final accounts = _offlineAccounts();
+    if (accounts.containsKey(email)) {
+      authError =
+          'An offline account already exists for this email. Sign in instead.';
+      notifyListeners();
+      return false;
+    }
+    final random = Random.secure();
+    final salt = List<int>.generate(16, (_) => random.nextInt(256));
+    accounts[email] = {
+      'name': name,
+      'salt': base64Encode(salt),
+      'passwordHash': _offlinePasswordHash(password, salt),
+    };
+    await _prefs?.setString('offlineAccounts', jsonEncode(accounts));
+    return true;
+  }
+
+  bool _verifyOfflinePassword(Map<String, dynamic> account, String password) {
+    try {
+      final salt = base64Decode(account['salt'] as String);
+      return _offlinePasswordHash(password, salt) == account['passwordHash'];
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String _offlinePasswordHash(String password, List<int> salt) {
+    var digest = sha256.convert([...utf8.encode(password), ...salt]);
+    for (var i = 1; i < 60000; i++) {
+      digest = sha256.convert([...digest.bytes, ...salt]);
+    }
+    return digest.toString();
+  }
+
+  Future<void> _setOfflineUser(
+    String email,
+    Map<String, dynamic> offlineAccount,
+  ) async {
+    await _prefs?.setString('offlineSessionEmail', email);
+    loggedIn = true;
+    account = email;
+    ownerName = offlineAccount['name'] as String? ?? email;
+    authError = null;
+    await _save();
+    notifyListeners();
+  }
+
+  String _authMessage(String code) => switch (code) {
+    'invalid-email' => 'Enter a valid email address.',
+    'user-not-found' ||
+    'wrong-password' ||
+    'invalid-credential' => 'Email or password is incorrect.',
+    'email-already-in-use' => 'An account already exists for this email.',
+    'weak-password' => 'Choose a stronger password (at least 6 characters).',
+    'operation-not-allowed' =>
+      'Enable this sign-in method in Firebase Authentication.',
+    'network-request-failed' => 'Check your internet connection and try again.',
+    'too-many-requests' => 'Too many attempts. Wait a moment and try again.',
+    _ => 'Sign-in failed ($code).',
+  };
+
+  Future<void> logout() async {
+    await FirebaseAuth.instance.signOut();
+    await _prefs?.remove('offlineSessionEmail');
+    if (_googleSignInInitialization != null) {
+      await GoogleSignIn.instance.signOut();
+    }
     loggedIn = false;
+    authError = null;
     cart.clear();
     _save();
     notifyListeners();
   }
 
   // Cart / sale
-  
+
   List<CartLine> get cartLines {
     final out = <CartLine>[];
     cart.forEach((id, q) {
@@ -223,7 +539,8 @@ class AppState extends ChangeNotifier {
   }
 
   int get cartCount => cart.values.fold(0, (a, b) => a + b);
-  double get subtotal => cartLines.fold(0.0, (a, l) => a + l.product.price * l.qty);
+  double get subtotal =>
+      cartLines.fold(0.0, (a, l) => a + l.product.price * l.qty);
   double get tax => subtotal * taxRate;
   double get total => subtotal + tax;
 
@@ -262,12 +579,14 @@ class AppState extends ChangeNotifier {
       id: 'S${DateTime.now().millisecondsSinceEpoch}',
       date: DateTime.now(),
       items: lines
-          .map((l) => SaleItem(
-                productId: l.product.id,
-                name: l.product.name,
-                price: l.product.price,
-                qty: l.qty,
-              ))
+          .map(
+            (l) => SaleItem(
+              productId: l.product.id,
+              name: l.product.name,
+              price: l.product.price,
+              qty: l.qty,
+            ),
+          )
           .toList(),
       customer: selectedCustomer?.name ?? 'Walk-in Customer',
       method: paymentMethod,
@@ -287,18 +606,25 @@ class AppState extends ChangeNotifier {
     return sale;
   }
 
-
   // Inventory / customers
-  
-  void addProduct(String name, double price, int stock, int reorder, String category) {
-    products.add(Product(
-      id: 'p${DateTime.now().millisecondsSinceEpoch}',
-      name: name,
-      price: price,
-      stock: stock,
-      reorder: reorder,
-      category: category,
-    ));
+
+  void addProduct(
+    String name,
+    double price,
+    int stock,
+    int reorder,
+    String category,
+  ) {
+    products.add(
+      Product(
+        id: 'p${DateTime.now().millisecondsSinceEpoch}',
+        name: name,
+        price: price,
+        stock: stock,
+        reorder: reorder,
+        category: category,
+      ),
+    );
     _save();
     notifyListeners();
   }
@@ -311,11 +637,13 @@ class AppState extends ChangeNotifier {
   }
 
   void addCustomer(String name, String phone) {
-    customers.add(Customer(
-      id: 'c${DateTime.now().millisecondsSinceEpoch}',
-      name: name,
-      phone: phone,
-    ));
+    customers.add(
+      Customer(
+        id: 'c${DateTime.now().millisecondsSinceEpoch}',
+        name: name,
+        phone: phone,
+      ),
+    );
     _save();
     notifyListeners();
   }
@@ -325,7 +653,7 @@ class AppState extends ChangeNotifier {
   int visitsBy(Customer c) => sales.where((s) => s.customer == c.name).length;
 
   // Settings
-  
+
   void updateBusiness({String? name, String? type, int? color}) {
     if (name != null) businessName = name;
     if (type != null) businessType = type;
@@ -350,7 +678,10 @@ class AppState extends ChangeNotifier {
     enabledMethods[m] = on;
     if (!on && paymentMethod == m) {
       paymentMethod = enabledMethods.entries
-          .firstWhere((e) => e.value, orElse: () => const MapEntry('Cash', true))
+          .firstWhere(
+            (e) => e.value,
+            orElse: () => const MapEntry('Cash', true),
+          )
           .key;
     }
     _save();
@@ -364,6 +695,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> resetData() async {
+    await FirebaseAuth.instance.signOut();
+    if (_googleSignInInitialization != null) {
+      await GoogleSignIn.instance.signOut();
+    }
     await _prefs?.clear();
     cart.clear();
     sales = [];
@@ -383,7 +718,9 @@ class AppState extends ChangeNotifier {
   List<Sale> salesBetween(DateTime from, DateTime to) {
     final a = _day(from);
     final b = _day(to).add(const Duration(days: 1));
-    return sales.where((s) => !s.date.isBefore(a) && s.date.isBefore(b)).toList();
+    return sales
+        .where((s) => !s.date.isBefore(a) && s.date.isBefore(b))
+        .toList();
   }
 
   double totalBetween(DateTime from, DateTime to) =>
@@ -407,7 +744,8 @@ class AppState extends ChangeNotifier {
         m[i.name] = (m[i.name] ?? 0) + i.qty;
       }
     }
-    final entries = m.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final entries = m.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
     return {for (final e in entries) e.key: e.value};
   }
 

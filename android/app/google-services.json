@@ -12,7 +12,20 @@
           "package_name": "com.example.pos_retail_app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "776430631615-k219b3cksa04iq8ipokp838n8iu936m8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.pos_retail_app",
+            "certificate_hash": "25bde4d9f1f3aa538cfc118ebf755d7249c1c6b2"
+          }
+        },
+        {
+          "client_id": "776430631615-5ulfn78p9879ob7l6o9ab1c9nrevqlaj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyB_II2IQr1rohP4NqH9M1nFGmeM1LA023k"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "776430631615-5ulfn78p9879ob7l6o9ab1c9nrevqlaj.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "776430631615-q4k56lv49cpjvvuaat421s81v116110g.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.posRetailApp"
+              }
+            }
+          ]
         }
       }
     }

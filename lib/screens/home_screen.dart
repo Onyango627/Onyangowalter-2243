@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -84,8 +86,35 @@ class _OfflineBanner extends StatelessWidget {
   }
 }
 
-class _Dashboard extends StatelessWidget {
+class _Dashboard extends StatefulWidget {
   const _Dashboard();
+
+  @override
+  State<_Dashboard> createState() => _DashboardState();
+}
+
+class _DashboardState extends State<_Dashboard> {
+  late Timer _greetingTimer;
+  String _greeting = _greetingFor(DateTime.now());
+
+  @override
+  void initState() {
+    super.initState();
+    // Refresh regularly so the greeting follows the device's local time even
+    // when the dashboard remains open across a time-of-day change.
+    _greetingTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      final greeting = _greetingFor(DateTime.now());
+      if (greeting != _greeting && mounted) {
+        setState(() => _greeting = greeting);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _greetingTimer.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -102,7 +131,7 @@ class _Dashboard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Good Morning,', style: TextStyle(color: Colors.grey.shade700)),
+                  Text('$_greeting,', style: TextStyle(color: Colors.grey.shade700)),
                   Text(state.ownerName,
                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                 ],
@@ -125,7 +154,17 @@ class _Dashboard extends StatelessWidget {
         const SizedBox(height: 14),
         Container(
           padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(color: primary, borderRadius: BorderRadius.circular(14)),
+          decoration: BoxDecoration(
+            color: primary,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: primary.withValues(alpha: 0.20),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
           child: Row(
             children: [
               Expanded(
@@ -183,8 +222,15 @@ class _Dashboard extends StatelessWidget {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.grey.shade200),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE7ECE9)),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF18345A).withValues(alpha: 0.08),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
               child: Row(
                 children: [
@@ -217,6 +263,12 @@ class _Dashboard extends StatelessWidget {
   }
 }
 
+String _greetingFor(DateTime time) {
+  if (time.hour < 12) return 'Good morning';
+  if (time.hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
 class _Quick extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -233,8 +285,15 @@ class _Quick extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE7ECE9)),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF18345A).withValues(alpha: 0.08),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

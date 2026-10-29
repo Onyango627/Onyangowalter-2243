@@ -57,22 +57,24 @@ class DefaultFirebaseOptions {
     projectId: 'pros-retail-app',
     storageBucket: 'pros-retail-app.firebasestorage.app',
   );
-
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyCiXrwy3pdaW_MnS5oPDl6klUWwBVBmwh0',
     appId: '1:776430631615:ios:4b3e8affc8629d7ea5240a',
     messagingSenderId: '776430631615',
     projectId: 'pros-retail-app',
     storageBucket: 'pros-retail-app.firebasestorage.app',
+    androidClientId: '776430631615-k219b3cksa04iq8ipokp838n8iu936m8.apps.googleusercontent.com',
+    iosClientId: '776430631615-q4k56lv49cpjvvuaat421s81v116110g.apps.googleusercontent.com',
     iosBundleId: 'com.example.posRetailApp',
   );
-
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyCiXrwy3pdaW_MnS5oPDl6klUWwBVBmwh0',
     appId: '1:776430631615:ios:4b3e8affc8629d7ea5240a',
     messagingSenderId: '776430631615',
     projectId: 'pros-retail-app',
     storageBucket: 'pros-retail-app.firebasestorage.app',
+    androidClientId: '776430631615-k219b3cksa04iq8ipokp838n8iu936m8.apps.googleusercontent.com',
+    iosClientId: '776430631615-q4k56lv49cpjvvuaat421s81v116110g.apps.googleusercontent.com',
     iosBundleId: 'com.example.posRetailApp',
   );
 

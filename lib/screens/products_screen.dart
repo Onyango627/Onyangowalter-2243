@@ -292,11 +292,12 @@ class _ProductCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: const Color(0xFFE7ECE9)),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF18345A).withValues(alpha: .09),
-            blurRadius: 18,
-            offset: const Offset(0, 6),
+            color: const Color(0xFF18345A).withValues(alpha: .14),
+            blurRadius: 16,
+            offset: const Offset(0, 5),
           ),
         ],
       ),
@@ -585,18 +586,23 @@ IconData _categoryIcon(String category) {
 String? _productImage(String name, String category) {
   final value = name.toLowerCase();
   if (value.contains('rice')) return 'assets/images/rice.jpg';
-  if (value.contains('coca') || value.contains('cola'))
+  if (value.contains('coca') || value.contains('cola')) {
     return 'assets/images/cola.jpg';
+  }
   if (value.contains('chip')) return 'assets/images/chips.jpg';
-  if (value.contains('ariel') || value.contains('detergent'))
+  if (value.contains('ariel') || value.contains('detergent')) {
     return 'assets/images/detergent.jpg';
-  if (value.contains('samsung') || value.contains('phone'))
+  }
+  if (value.contains('samsung') || value.contains('phone')) {
     return 'assets/images/phone.jpg';
+  }
   if (value.contains('notebook')) return 'assets/images/notebook.jpg';
-  if (value.contains('dove') || value.contains('soap'))
+  if (value.contains('dove') || value.contains('soap')) {
     return 'assets/images/soap.jpg';
-  if (value.contains('flour') || value.contains('unga'))
+  }
+  if (value.contains('flour') || value.contains('unga')) {
     return 'assets/images/flour.jpg';
+  }
   switch (category.toLowerCase()) {
     case 'beverages':
       return 'assets/images/cola.jpg';

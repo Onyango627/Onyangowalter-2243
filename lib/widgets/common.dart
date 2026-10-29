@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 /// 1250000 -> "1,250,000"
-String formatNumber(num v) => v
-    .round()
-    .toString()
-    .replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => ',');
+String formatNumber(num v) => v.round().toString().replaceAllMapped(
+  RegExp(r'\B(?=(\d{3})+(?!\d))'),
+  (m) => ',',
+);
 
 String ugx(num v) => 'UGX ${formatNumber(v)}';
 
@@ -41,22 +41,22 @@ class PrimaryButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final IconData? icon;
 
-  const PrimaryButton({super.key, required this.label, this.onPressed, this.icon});
+  const PrimaryButton({
+    super.key,
+    required this.label,
+    this.onPressed,
+    this.icon,
+  });
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      height: 48,
-      child: ElevatedButton.icon(
+      height: 52,
+      child: FilledButton.icon(
         onPressed: onPressed,
         icon: icon == null ? const SizedBox.shrink() : Icon(icon, size: 18),
         label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Theme.of(context).colorScheme.primary,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
       ),
     );
   }
@@ -76,16 +76,6 @@ class SearchField extends StatelessWidget {
         hintText: hint,
         prefixIcon: const Icon(Icons.search, size: 20),
         isDense: true,
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: Colors.grey.shade300),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: Colors.grey.shade300),
-        ),
       ),
     );
   }
@@ -97,26 +87,33 @@ class PillChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  const PillChip({super.key, required this.label, required this.selected, required this.onTap});
+  const PillChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final c = Theme.of(context).colorScheme.primary;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? c : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: selected ? c : Colors.grey.shade300),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? Colors.white : Colors.black87,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
+    return Material(
+      color: selected ? c : Colors.white,
+      shape: StadiumBorder(
+        side: BorderSide(color: selected ? c : const Color(0xFFDCE4DF)),
+      ),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : const Color(0xFF36443C),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ),
@@ -126,10 +123,12 @@ class PillChip extends StatelessWidget {
 
 AppBar simpleAppBar(String title, {bool back = true, List<Widget>? actions}) {
   return AppBar(
-    title: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+    title: Text(
+      title,
+      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+    ),
     automaticallyImplyLeading: back,
     actions: actions,
-    backgroundColor: Colors.white,
     foregroundColor: Colors.black87,
     elevation: 0,
     scrolledUnderElevation: 0,
@@ -139,5 +138,7 @@ AppBar simpleAppBar(String title, {bool back = true, List<Widget>? actions}) {
 void toast(BuildContext context, String msg) {
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating));
+    ..showSnackBar(
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+    );
 }

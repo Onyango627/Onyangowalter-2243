@@ -20,6 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _hide = true;
   bool _remember = true;
   bool _signup = false;
+  bool _resettingPassword = false;
   String? _error;
 
   @override
@@ -31,30 +32,76 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _submit() {
+    _authenticate();
+  }
+
+  Future<void> _authenticate() async {
     final state = context.read<AppState>();
-    final id = _id.text.trim();
-    final pw = _pw.text;
-    if (id.isEmpty || pw.isEmpty || (_signup && _name.text.trim().isEmpty)) {
+    final email = _id.text.trim();
+    final password = _pw.text;
+    if (email.isEmpty ||
+        password.isEmpty ||
+        (_signup && _name.text.trim().isEmpty)) {
       setState(() => _error = 'Please fill in all fields.');
       return;
     }
-    if (_signup) {
-      if (pw.length < 8) {
-        setState(() => _error = 'Password must be at least 8 characters.');
-        return;
-      }
-      state.signUp(_name.text.trim(), id, pw);
-      Navigator.pushReplacementNamed(context, Routes.home);
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      setState(() => _error = 'Enter a valid email address.');
       return;
     }
-    if (state.login(id, pw, remember: _remember)) {
+    if (_signup) {
+      if (password.length < 6) {
+        setState(() => _error = 'Password must be at least 6 characters.');
+        return;
+      }
+    }
+    final ok = _signup
+        ? await state.signUp(_name.text.trim(), email, password)
+        : await state.login(email, password, remember: _remember);
+    if (ok && mounted) {
       Navigator.pushReplacementNamed(context, Routes.home);
     } else {
-      setState(() => _error = 'Incorrect email/phone or password.');
+      setState(
+        () => _error = state.authError ?? 'Could not sign in. Try again.',
+      );
     }
   }
 
-  InputDecoration _dec(String hint, IconData icon, {Widget? suffix}) => InputDecoration(
+  Future<void> _googleSignIn() async {
+    final state = context.read<AppState>();
+    final ok = await state.signInWithGoogle();
+    if (ok && mounted) {
+      Navigator.pushReplacementNamed(context, Routes.home);
+    } else if (mounted && state.authError != null) {
+      setState(() => _error = state.authError);
+    }
+  }
+
+  Future<void> _forgotPassword() async {
+    final email = _id.text.trim();
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      setState(() => _error = 'Enter your account email above first.');
+      return;
+    }
+
+    setState(() {
+      _resettingPassword = true;
+      _error = null;
+    });
+    final error = await context.read<AppState>().sendPasswordResetEmail(email);
+    if (!mounted) return;
+    setState(() => _resettingPassword = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          error ?? 'If an account exists for that email, a reset link has been sent.',
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _dec(String hint, IconData icon, {Widget? suffix}) =>
+      InputDecoration(
         hintText: hint,
         prefixIcon: Icon(icon, size: 20),
         suffixIcon: suffix,
@@ -66,7 +113,6 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: simpleAppBar('', back: Navigator.canPop(context)),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -74,20 +120,41 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(_signup ? 'Create account' : 'Login',
-                  style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
+              Text(
+                _signup ? 'Create account' : 'Login',
+                style: const TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
               const SizedBox(height: 4),
-              Text(_signup ? 'Set up your business account' : 'Sign in to your account',
-                  style: TextStyle(color: Colors.grey.shade600)),
+              Text(
+                _signup
+                    ? 'Set up your business account'
+                    : 'Sign in to your account',
+                style: TextStyle(color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Email accounts can be created offline and stay on this device. Google sign-in needs internet.',
+                style: TextStyle(
+                  color: Colors.blueGrey.shade600,
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
               const SizedBox(height: 24),
               if (_signup) ...[
-                TextField(controller: _name, decoration: _dec('Full name', Icons.person_outline)),
+                TextField(
+                  controller: _name,
+                  decoration: _dec('Full name', Icons.person_outline),
+                ),
                 const SizedBox(height: 14),
               ],
               TextField(
                 controller: _id,
                 keyboardType: TextInputType.emailAddress,
-                decoration: _dec('Email or Phone', Icons.mail_outline),
+                decoration: _dec('Email', Icons.mail_outline),
               ),
               const SizedBox(height: 14),
               TextField(
@@ -97,8 +164,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   'Password',
                   Icons.lock_outline,
                   suffix: IconButton(
-                    icon: Icon(_hide ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                        size: 20),
+                    icon: Icon(
+                      _hide
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                      size: 20,
+                    ),
                     onPressed: () => setState(() => _hide = !_hide),
                   ),
                 ),
@@ -113,9 +184,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     const Text('Remember me', style: TextStyle(fontSize: 13)),
                     const Spacer(),
                     TextButton(
-                      onPressed: () => toast(context,
-                          'Password reset needs a backend. Use Settings > Security once logged in.'),
-                      child: const Text('Forgot password?', style: TextStyle(fontSize: 13)),
+                      onPressed: _resettingPassword ? null : _forgotPassword,
+                      child: Text(
+                        _resettingPassword ? 'Sending…' : 'Forgot password?',
+                        style: const TextStyle(fontSize: 13),
+                      ),
                     ),
                   ],
                 )
@@ -124,42 +197,62 @@ class _LoginScreenState extends State<LoginScreen> {
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13)),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: Colors.red, fontSize: 13),
+                  ),
                 ),
-              PrimaryButton(label: _signup ? 'Sign Up' : 'Login', onPressed: _submit),
-              if (!_signup) ...[
-                const SizedBox(height: 10),
-                Text('Demo: owner@business.com / password123',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
-              ],
+              PrimaryButton(
+                label: _signup ? 'Sign Up' : 'Login',
+                onPressed: _submit,
+              ),
               const SizedBox(height: 18),
-              Row(children: [
-                Expanded(child: Divider(color: Colors.grey.shade300)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: Text('OR', style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-                ),
-                Expanded(child: Divider(color: Colors.grey.shade300)),
-              ]),
+              Row(
+                children: [
+                  Expanded(child: Divider(color: Colors.grey.shade300)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Text(
+                      'OR',
+                      style: TextStyle(
+                        color: Colors.grey.shade500,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  Expanded(child: Divider(color: Colors.grey.shade300)),
+                ],
+              ),
               const SizedBox(height: 18),
-              _social(Icons.g_mobiledata, 'Continue with Google'),
-              const SizedBox(height: 10),
-              _social(Icons.apple, 'Continue with Apple'),
+              _social(
+                const _GoogleMark(),
+                'Continue with Google',
+                _googleSignIn,
+              ),
               const SizedBox(height: 22),
               Center(
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(_signup ? 'Already have an account? ' : "Don't have an account? ",
-                        style: const TextStyle(fontSize: 13)),
+                    Text(
+                      _signup
+                          ? 'Already have an account? '
+                          : "Don't have an account? ",
+                      style: const TextStyle(fontSize: 13),
+                    ),
                     GestureDetector(
                       onTap: () => setState(() {
                         _signup = !_signup;
                         _error = null;
                       }),
-                      child: Text(_signup ? 'Login' : 'Sign Up',
-                          style: TextStyle(
-                              fontSize: 13, color: primary, fontWeight: FontWeight.w600)),
+                      child: Text(
+                        _signup ? 'Login' : 'Sign Up',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -171,19 +264,70 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _social(IconData icon, String label) {
+  Widget _social(Widget icon, String label, VoidCallback onPressed) {
     return SizedBox(
       width: double.infinity,
       height: 46,
       child: OutlinedButton.icon(
-        onPressed: () => toast(context,
-            '$label needs OAuth set up (google_sign_in / sign_in_with_apple).'),
-        icon: Icon(icon, size: 24, color: Colors.black87),
+        onPressed: onPressed,
+        icon: icon,
         label: Text(label, style: const TextStyle(color: Colors.black87)),
         style: OutlinedButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
       ),
     );
   }
+}
+
+class _GoogleMark extends StatelessWidget {
+  const _GoogleMark();
+
+  @override
+  Widget build(BuildContext context) => const SizedBox(
+    width: 20,
+    height: 20,
+    child: CustomPaint(painter: _GoogleMarkPainter()),
+  );
+}
+
+class _GoogleMarkPainter extends CustomPainter {
+  const _GoogleMarkPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width * 0.39;
+    final stroke = size.width * 0.19;
+    final bounds = Rect.fromCircle(center: center, radius: radius);
+
+    void arc(Color color, double start, double sweep) {
+      canvas.drawArc(
+        bounds,
+        start,
+        sweep,
+        false,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke
+          ..strokeCap = StrokeCap.butt,
+      );
+    }
+
+    // Google's four-color G mark.
+    arc(const Color(0xFF4285F4), -0.72, 1.45);
+    arc(const Color(0xFF34A853), 0.80, 1.35);
+    arc(const Color(0xFFFBBC05), 2.22, 1.30);
+    arc(const Color(0xFFEA4335), 3.58, 1.90);
+    canvas.drawRect(
+      Rect.fromLTWH(center.dx, center.dy - stroke / 2, radius + stroke, stroke),
+      Paint()..color = const Color(0xFF4285F4),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
