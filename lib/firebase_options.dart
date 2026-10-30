@@ -46,6 +46,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '776430631615',
     projectId: 'pros-retail-app',
     authDomain: 'pros-retail-app.firebaseapp.com',
+    databaseURL: 'https://pros-retail-app-default-rtdb.europe-west1.firebasedatabase.app',
     storageBucket: 'pros-retail-app.firebasestorage.app',
     measurementId: 'G-22TRQFM181',
   );
@@ -55,6 +56,7 @@ class DefaultFirebaseOptions {
     appId: '1:776430631615:android:11fe4b2a4aa8d43fa5240a',
     messagingSenderId: '776430631615',
     projectId: 'pros-retail-app',
+    databaseURL: 'https://pros-retail-app-default-rtdb.europe-west1.firebasedatabase.app',
     storageBucket: 'pros-retail-app.firebasestorage.app',
   );
   static const FirebaseOptions ios = FirebaseOptions(
@@ -62,6 +64,7 @@ class DefaultFirebaseOptions {
     appId: '1:776430631615:ios:4b3e8affc8629d7ea5240a',
     messagingSenderId: '776430631615',
     projectId: 'pros-retail-app',
+    databaseURL: 'https://pros-retail-app-default-rtdb.europe-west1.firebasedatabase.app',
     storageBucket: 'pros-retail-app.firebasestorage.app',
     androidClientId: '776430631615-k219b3cksa04iq8ipokp838n8iu936m8.apps.googleusercontent.com',
     iosClientId: '776430631615-q4k56lv49cpjvvuaat421s81v116110g.apps.googleusercontent.com',
@@ -72,6 +75,7 @@ class DefaultFirebaseOptions {
     appId: '1:776430631615:ios:4b3e8affc8629d7ea5240a',
     messagingSenderId: '776430631615',
     projectId: 'pros-retail-app',
+    databaseURL: 'https://pros-retail-app-default-rtdb.europe-west1.firebasedatabase.app',
     storageBucket: 'pros-retail-app.firebasestorage.app',
     androidClientId: '776430631615-k219b3cksa04iq8ipokp838n8iu936m8.apps.googleusercontent.com',
     iosClientId: '776430631615-q4k56lv49cpjvvuaat421s81v116110g.apps.googleusercontent.com',
@@ -84,6 +88,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '776430631615',
     projectId: 'pros-retail-app',
     authDomain: 'pros-retail-app.firebaseapp.com',
+    databaseURL: 'https://pros-retail-app-default-rtdb.europe-west1.firebasedatabase.app',
     storageBucket: 'pros-retail-app.firebasestorage.app',
     measurementId: 'G-1ZZK75P54Z',
   );

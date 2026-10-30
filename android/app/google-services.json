@@ -1,6 +1,7 @@
 {
   "project_info": {
     "project_number": "776430631615",
+    "firebase_url": "https://pros-retail-app-default-rtdb.europe-west1.firebasedatabase.app",
     "project_id": "pros-retail-app",
     "storage_bucket": "pros-retail-app.firebasestorage.app"
   },
