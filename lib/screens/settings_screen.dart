@@ -174,7 +174,7 @@ class SettingsScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'Sign-in is secured by Firebase Authentication. Business data stays on this device and is only used to run your POS.',
+                          'Sign-in is secured by Firebase Authentication. Business data is saved on this device for offline access and synced to your Firebase account when online.',
                         ),
                         const SizedBox(height: 14),
                         ListTile(

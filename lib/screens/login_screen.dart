@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -20,7 +22,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _hide = true;
   bool _remember = true;
   bool _signup = false;
-  bool _resettingPassword = false;
   String? _error;
 
   @override
@@ -78,26 +79,98 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _forgotPassword() async {
-    final email = _id.text.trim();
-    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
-      setState(() => _error = 'Enter your account email above first.');
-      return;
-    }
-
-    setState(() {
-      _resettingPassword = true;
-      _error = null;
-    });
-    final error = await context.read<AppState>().sendPasswordResetEmail(email);
-    if (!mounted) return;
-    setState(() => _resettingPassword = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          error ?? 'If an account exists for that email, a reset link has been sent.',
-        ),
-      ),
+    final email = TextEditingController(text: _id.text.trim());
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        String? error;
+        bool sending = false;
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Reset password'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Enter your account email and we’ll send you a reset link.',
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: email,
+                  autofocus: true,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.done,
+                  decoration: const InputDecoration(
+                    labelText: 'Email address',
+                    prefixIcon: Icon(Icons.email_outlined),
+                  ),
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: sending ? null : () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: sending
+                    ? null
+                    : () async {
+                        final value = email.text.trim();
+                        if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+                            .hasMatch(value)) {
+                          setDialogState(
+                            () => error = 'Enter a valid email address.',
+                          );
+                          return;
+                        }
+                        setDialogState(() {
+                          sending = true;
+                          error = null;
+                        });
+                        final sendError = await context
+                            .read<AppState>()
+                            .sendPasswordResetEmail(value);
+                        if (!dialogContext.mounted) return;
+                        if (sendError != null) {
+                          setDialogState(() {
+                            sending = false;
+                            error = sendError;
+                          });
+                        } else {
+                          Navigator.pop(
+                            dialogContext,
+                            'If an account exists for that email, a reset link has been sent.',
+                          );
+                        }
+                      },
+                child: sending
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Send reset link'),
+              ),
+            ],
+          ),
+        );
+      },
     );
+    email.dispose();
+    if (!mounted || result == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result)));
   }
 
   InputDecoration _dec(String hint, IconData icon, {Widget? suffix}) =>
@@ -184,10 +257,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     const Text('Remember me', style: TextStyle(fontSize: 13)),
                     const Spacer(),
                     TextButton(
-                      onPressed: _resettingPassword ? null : _forgotPassword,
-                      child: Text(
-                        _resettingPassword ? 'Sending…' : 'Forgot password?',
-                        style: const TextStyle(fontSize: 13),
+                      onPressed: _forgotPassword,
+                      child: const Text(
+                        'Forgot password?',
+                        style: TextStyle(fontSize: 13),
                       ),
                     ),
                   ],
@@ -287,8 +360,8 @@ class _GoogleMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const SizedBox(
-    width: 20,
-    height: 20,
+    width: 22,
+    height: 22,
     child: CustomPaint(painter: _GoogleMarkPainter()),
   );
 }
@@ -299,8 +372,8 @@ class _GoogleMarkPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width * 0.39;
-    final stroke = size.width * 0.19;
+    final radius = size.width * 0.37;
+    final stroke = size.width * 0.17;
     final bounds = Rect.fromCircle(center: center, radius: radius);
 
     void arc(Color color, double start, double sweep) {
@@ -313,17 +386,24 @@ class _GoogleMarkPainter extends CustomPainter {
           ..color = color
           ..style = PaintingStyle.stroke
           ..strokeWidth = stroke
-          ..strokeCap = StrokeCap.butt,
+          ..strokeCap = StrokeCap.round,
       );
     }
 
-    // Google's four-color G mark.
-    arc(const Color(0xFF4285F4), -0.72, 1.45);
-    arc(const Color(0xFF34A853), 0.80, 1.35);
-    arc(const Color(0xFFFBBC05), 2.22, 1.30);
-    arc(const Color(0xFFEA4335), 3.58, 1.90);
+    // Google's four-color G mark: blue right, green lower-right, yellow
+    // lower-left, and red upper-left.
+    const gap = 0.08;
+    arc(const Color(0xFF4285F4), -math.pi / 4 + gap, math.pi / 2 - 2 * gap);
+    arc(const Color(0xFF34A853), math.pi / 4 + gap, math.pi / 2 - 2 * gap);
+    arc(const Color(0xFFFBBC05), 3 * math.pi / 4 + gap, math.pi / 2 - 2 * gap);
+    arc(const Color(0xFFEA4335), 5 * math.pi / 4 + gap, math.pi / 2 - 2 * gap);
     canvas.drawRect(
-      Rect.fromLTWH(center.dx, center.dy - stroke / 2, radius + stroke, stroke),
+      Rect.fromLTWH(
+        center.dx - stroke / 2,
+        center.dy - stroke / 2,
+        radius + stroke,
+        stroke,
+      ),
       Paint()..color = const Color(0xFF4285F4),
     );
   }

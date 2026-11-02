@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -25,6 +26,8 @@ class CartLine {
 class AppState extends ChangeNotifier {
   SharedPreferences? _prefs;
   StreamSubscription? _connSub;
+  Future<void> _cloudWrite = Future<void>.value();
+  String? cloudSyncError;
 
   // ---- data ----
   List<Product> products = [];
@@ -109,9 +112,21 @@ class AppState extends ChangeNotifier {
     networkOnline = !first.contains(ConnectivityResult.none);
     _connSub = Connectivity().onConnectivityChanged.listen((results) {
       networkOnline = !results.contains(ConnectivityResult.none);
-      if (isOnline) _syncPending();
+      if (isOnline) {
+        _syncPending();
+        _queueCloudSave();
+      }
       notifyListeners();
     });
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      if (_prefs?.getBool('cloudSyncPending') == true) {
+        _queueCloudSave();
+        await _cloudWrite;
+      } else {
+        await _restoreCloudData(user);
+      }
+    }
   }
 
   void _seed() {
@@ -219,6 +234,124 @@ class AppState extends ChangeNotifier {
     await p.setInt('defaultReorder', defaultReorder);
     await p.setBool('loggedIn', loggedIn);
     await p.setString('enabledMethods', jsonEncode(enabledMethods));
+    _queueCloudSave();
+  }
+
+  void _queueCloudSave() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    if (!isOnline) {
+      _prefs?.setBool('cloudSyncPending', true);
+      return;
+    }
+
+    final snapshot = <String, dynamic>{
+      'uid': user.uid,
+      'email': user.email ?? account,
+      'ownerName': ownerName,
+      'businessName': businessName,
+      'businessType': businessType,
+      'themeColor': themeColor,
+      'taxRate': taxRate,
+      'defaultReorder': defaultReorder,
+      'enabledMethods': enabledMethods,
+      'products': products.map((item) => item.toJson()).toList(),
+      'customers': customers.map((item) => item.toJson()).toList(),
+      'sales': sales.map((item) => item.toJson()).toList(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    final doc = FirebaseFirestore.instance.collection('users').doc(user.uid);
+    _cloudWrite = _cloudWrite
+        .catchError((_) {})
+        .then((_) => doc.set(snapshot, SetOptions(merge: true)))
+        .then((_) {
+          cloudSyncError = null;
+          _prefs?.setBool('cloudSyncPending', false);
+          notifyListeners();
+        })
+        .catchError((Object error) {
+          _prefs?.setBool('cloudSyncPending', true);
+          cloudSyncError =
+              error is FirebaseException && error.code == 'permission-denied'
+              ? 'Firebase data access is blocked. Deploy the Firestore rules in firestore.rules.'
+              : 'Could not sync business data to Firebase. It remains saved on this device.';
+          notifyListeners();
+        });
+  }
+
+  Future<void> _restoreCloudData(User user) async {
+    if (!isOnline) return;
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final data = snapshot.data();
+      if (data == null) return;
+
+      final remoteProducts = data['products'];
+      final remoteCustomers = data['customers'];
+      final remoteSales = data['sales'];
+      if (remoteProducts is List) {
+        products = remoteProducts
+            .map((e) => Product.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+      }
+      if (remoteCustomers is List) {
+        customers = remoteCustomers
+            .map((e) => Customer.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+      }
+      if (remoteSales is List) {
+        sales = remoteSales
+            .map((e) => Sale.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+      }
+      businessName = data['businessName'] as String? ?? businessName;
+      businessType = data['businessType'] as String? ?? businessType;
+      ownerName = data['ownerName'] as String? ?? ownerName;
+      themeColor = data['themeColor'] as int? ?? themeColor;
+      taxRate = (data['taxRate'] as num?)?.toDouble() ?? taxRate;
+      defaultReorder = data['defaultReorder'] as int? ?? defaultReorder;
+      final remoteMethods = data['enabledMethods'];
+      if (remoteMethods is Map) {
+        enabledMethods = Map<String, bool>.from(remoteMethods);
+      }
+      await _saveLocally();
+      cloudSyncError = null;
+    } on FirebaseException catch (e) {
+      cloudSyncError = e.code == 'permission-denied'
+          ? 'Firebase data access is blocked. Deploy the Firestore rules in firestore.rules.'
+          : 'Could not load business data from Firebase.';
+    } catch (_) {
+      cloudSyncError = 'Could not load saved business data from Firebase.';
+    }
+  }
+
+  Future<void> _saveLocally() async {
+    final p = _prefs;
+    if (p == null) return;
+    await p.setString(
+      'products',
+      jsonEncode(products.map((e) => e.toJson()).toList()),
+    );
+    await p.setString(
+      'customers',
+      jsonEncode(customers.map((e) => e.toJson()).toList()),
+    );
+    await p.setString(
+      'sales',
+      jsonEncode(sales.map((e) => e.toJson()).toList()),
+    );
+    await p.setString('businessName', businessName);
+    await p.setString('businessType', businessType);
+    await p.setString('ownerName', ownerName);
+    await p.setString('account', account);
+    await p.setInt('themeColor', themeColor);
+    await p.setDouble('taxRate', taxRate);
+    await p.setInt('defaultReorder', defaultReorder);
+    await p.setString('enabledMethods', jsonEncode(enabledMethods));
   }
 
   void _syncPending() {
@@ -268,9 +401,37 @@ class AppState extends ChangeNotifier {
         password: password,
       );
       await _prefs?.remove('offlineSessionEmail');
-      _setAuthenticatedUser(credential.user);
+      await _setAuthenticatedUser(credential.user);
       return true;
     } on FirebaseAuthException catch (e) {
+      if (e.code == 'user-not-found' &&
+          offlineAccount != null &&
+          _verifyOfflinePassword(offlineAccount, password)) {
+        try {
+          final credential = await FirebaseAuth.instance
+              .createUserWithEmailAndPassword(
+                email: normalizedEmail,
+                password: password,
+              );
+          await credential.user?.updateDisplayName(
+            offlineAccount['name'] as String? ?? normalizedEmail,
+          );
+          await _prefs?.remove('offlineSessionEmail');
+          await _setAuthenticatedUser(
+            credential.user,
+            fallbackName: offlineAccount['name'] as String? ?? normalizedEmail,
+          );
+          return true;
+        } on FirebaseAuthException catch (promotionError) {
+          if (promotionError.code == 'network-request-failed') {
+            await _setOfflineUser(normalizedEmail, offlineAccount);
+            return true;
+          }
+          authError = _authMessage(promotionError.code);
+          notifyListeners();
+          return false;
+        }
+      }
       if ((e.code == 'network-request-failed' || e.code == 'user-not-found') &&
           offlineAccount != null &&
           _verifyOfflinePassword(offlineAccount, password)) {
@@ -315,7 +476,7 @@ class AppState extends ChangeNotifier {
         // Account creation succeeds even if the display name update fails.
       }
       await _prefs?.remove('offlineSessionEmail');
-      _setAuthenticatedUser(credential.user, fallbackName: name.trim());
+      await _setAuthenticatedUser(credential.user, fallbackName: name.trim());
       return true;
     } on FirebaseAuthException catch (e) {
       if (e.code == 'network-request-failed') {
@@ -349,7 +510,7 @@ class AppState extends ChangeNotifier {
           GoogleAuthProvider(),
         );
         await _prefs?.remove('offlineSessionEmail');
-        _setAuthenticatedUser(credential.user);
+        await _setAuthenticatedUser(credential.user);
         return true;
       }
 
@@ -367,7 +528,7 @@ class AppState extends ChangeNotifier {
         credential,
       );
       await _prefs?.remove('offlineSessionEmail');
-      _setAuthenticatedUser(result.user);
+      await _setAuthenticatedUser(result.user);
       return true;
     } on FirebaseAuthException catch (e) {
       authError = _authMessage(e.code);
@@ -398,7 +559,9 @@ class AppState extends ChangeNotifier {
       return 'This account was created offline and is stored only on this device. It has no email password reset option.';
     }
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: normalizedEmail);
+      await FirebaseAuth.instance.sendPasswordResetEmail(
+        email: normalizedEmail,
+      );
       return null;
     } on FirebaseAuthException catch (e) {
       return switch (e.code) {
@@ -406,7 +569,8 @@ class AppState extends ChangeNotifier {
         'user-not-found' => 'No account was found for that email address.',
         'network-request-failed' =>
           'Check your internet connection and try again.',
-        'too-many-requests' => 'Too many attempts. Wait a moment and try again.',
+        'too-many-requests' =>
+          'Too many attempts. Wait a moment and try again.',
         _ => 'Could not send the reset email. Please try again (${e.code}).',
       };
     } catch (_) {
@@ -414,14 +578,26 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void _setAuthenticatedUser(User? user, {String? fallbackName}) {
+  Future<void> _setAuthenticatedUser(User? user, {String? fallbackName}) async {
     if (user == null) return;
     loggedIn = true;
     account = user.email ?? account;
     ownerName = user.displayName?.trim().isNotEmpty == true
         ? user.displayName!.trim()
         : fallbackName ?? account;
-    _save();
+    if (_prefs?.getBool('cloudSyncPending') == true) {
+      _queueCloudSave();
+      await _cloudWrite;
+    } else {
+      await _restoreCloudData(user);
+    }
+    if (user.displayName?.trim().isNotEmpty != true &&
+        fallbackName != null &&
+        ownerName == account) {
+      ownerName = fallbackName;
+    }
+    await _save();
+    await _cloudWrite;
     notifyListeners();
   }
 

@@ -30,6 +30,8 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           children: [
             if (!state.isOnline) const _OfflineBanner(),
+            if (state.cloudSyncError != null)
+              _CloudSyncBanner(message: state.cloudSyncError!),
             Expanded(
               child: IndexedStack(
                 index: _tab,
@@ -51,10 +53,26 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Colors.white,
         height: 64,
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
-          NavigationDestination(icon: Icon(Icons.shopping_cart_outlined), selectedIcon: Icon(Icons.shopping_cart), label: 'Sales'),
-          NavigationDestination(icon: Icon(Icons.inventory_2_outlined), selectedIcon: Icon(Icons.inventory_2), label: 'Inventory'),
-          NavigationDestination(icon: Icon(Icons.people_outline), selectedIcon: Icon(Icons.people), label: 'Customers'),
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.shopping_cart_outlined),
+            selectedIcon: Icon(Icons.shopping_cart),
+            label: 'Sales',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.inventory_2_outlined),
+            selectedIcon: Icon(Icons.inventory_2),
+            label: 'Inventory',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.people_outline),
+            selectedIcon: Icon(Icons.people),
+            label: 'Customers',
+          ),
           NavigationDestination(icon: Icon(Icons.more_horiz), label: 'More'),
         ],
       ),
@@ -77,10 +95,43 @@ class _OfflineBanner extends StatelessWidget {
           children: [
             Icon(Icons.wifi_off, size: 16, color: Colors.orange.shade800),
             const SizedBox(width: 8),
-            Text('Working offline - sales are saved on this device',
-                style: TextStyle(fontSize: 12, color: Colors.orange.shade900)),
+            Text(
+              'Working offline - changes are saved on this device and sync when online',
+              style: TextStyle(fontSize: 12, color: Colors.orange.shade900),
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _CloudSyncBanner extends StatelessWidget {
+  final String message;
+
+  const _CloudSyncBanner({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      color: Colors.amber.shade100,
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      child: Row(
+        children: [
+          Icon(
+            Icons.cloud_off_outlined,
+            size: 17,
+            color: Colors.amber.shade900,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(fontSize: 12, color: Colors.amber.shade900),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -96,6 +147,159 @@ class _Dashboard extends StatefulWidget {
 class _DashboardState extends State<_Dashboard> {
   late Timer _greetingTimer;
   String _greeting = _greetingFor(DateTime.now());
+
+  int _notificationCount(AppState state) =>
+      state.lowStock.length +
+      (state.cloudSyncError != null ? 1 : 0) +
+      (state.pendingSyncCount > 0 || !state.isOnline ? 1 : 0);
+
+  void _showNotifications(AppState state) {
+    final alerts = <Widget>[];
+    if (!state.isOnline) {
+      alerts.add(
+        const ListTile(
+          leading: Icon(Icons.wifi_off, color: Colors.orange),
+          title: Text('Working offline'),
+          subtitle: Text(
+            'Changes are saved on this device and will sync when online.',
+          ),
+        ),
+      );
+    } else if (state.pendingSyncCount > 0) {
+      alerts.add(
+        ListTile(
+          leading: const Icon(
+            Icons.cloud_upload_outlined,
+            color: Colors.orange,
+          ),
+          title: const Text('Sales waiting to sync'),
+          subtitle: Text(
+            '${state.pendingSyncCount} sale(s) are waiting to sync.',
+          ),
+        ),
+      );
+    }
+    if (state.cloudSyncError case final error?) {
+      alerts.add(
+        ListTile(
+          leading: const Icon(Icons.cloud_off_outlined, color: Colors.red),
+          title: const Text('Cloud sync issue'),
+          subtitle: Text(error),
+        ),
+      );
+    }
+    for (final product in state.lowStock) {
+      alerts.add(
+        ListTile(
+          leading: Icon(
+            product.stock == 0 ? Icons.error_outline : Icons.warning_amber,
+            color: product.stock == 0 ? Colors.red : Colors.orange,
+          ),
+          title: Text(product.stock == 0 ? 'Out of stock' : 'Low stock'),
+          subtitle: Text('${product.name}: ${product.stock} left'),
+          onTap: () {
+            Navigator.pop(context);
+            Navigator.pushNamed(context, Routes.inventory);
+          },
+        ),
+      );
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 4, 12, 8),
+              child: Text(
+                'Notifications',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+            ),
+            if (alerts.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(20),
+                child: Center(child: Text('You’re all caught up.')),
+              )
+            else
+              Flexible(child: ListView(shrinkWrap: true, children: alerts)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAccountDetails(AppState state, Color primary) {
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(
+              radius: 32,
+              backgroundColor: primary.withValues(alpha: 0.12),
+              child: Icon(Icons.person, size: 32, color: primary),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              state.ownerName,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            Text(state.account, style: TextStyle(color: Colors.grey.shade600)),
+            const Divider(height: 28),
+            ListTile(
+              leading: Icon(Icons.storefront_outlined, color: primary),
+              title: Text(state.businessName),
+              subtitle: Text(state.businessType),
+              contentPadding: EdgeInsets.zero,
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Log out', style: TextStyle(color: Colors.red)),
+              contentPadding: EdgeInsets.zero,
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (dialogContext) => AlertDialog(
+                    title: const Text('Log out?'),
+                    content: const Text(
+                      'You can sign back in to access your account.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(dialogContext, true),
+                        child: const Text('Log out'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirm != true || !mounted) return;
+                await state.logout();
+                if (mounted) {
+                  Navigator.of(context)
+                      .pushNamedAndRemoveUntil(Routes.login, (_) => false);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -131,23 +335,65 @@ class _DashboardState extends State<_Dashboard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('$_greeting,', style: TextStyle(color: Colors.grey.shade700)),
-                  Text(state.ownerName,
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  Text(
+                    '$_greeting,',
+                    style: TextStyle(color: Colors.grey.shade700),
+                  ),
+                  Text(
+                    state.ownerName,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ],
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.notifications_none),
-              onPressed: () {
-                final low = state.lowStock.length;
-                toast(context, low == 0 ? 'No alerts' : '$low item(s) running low on stock');
-              },
+              tooltip: 'Notifications',
+              onPressed: () => _showNotifications(state),
+              icon: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  const Icon(Icons.notifications_none),
+                  if (_notificationCount(state) > 0)
+                    Positioned(
+                      right: -6,
+                      top: -5,
+                      child: Container(
+                        constraints: const BoxConstraints(
+                          minWidth: 17,
+                          minHeight: 17,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          _notificationCount(state) > 9
+                              ? '9+'
+                              : '${_notificationCount(state)}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: primary.withValues(alpha: 0.15),
-              child: Icon(Icons.person, size: 18, color: primary),
+            IconButton(
+              tooltip: 'Account details',
+              onPressed: () => _showAccountDetails(state, primary),
+              icon: CircleAvatar(
+                radius: 16,
+                backgroundColor: primary.withValues(alpha: 0.15),
+                child: Icon(Icons.person, size: 18, color: primary),
+              ),
             ),
           ],
         ),
@@ -171,16 +417,26 @@ class _DashboardState extends State<_Dashboard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text("Today's Sales",
-                        style: TextStyle(color: Colors.white70, fontSize: 13)),
+                    const Text(
+                      "Today's Sales",
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
                     const SizedBox(height: 4),
-                    Text(ugx(state.todaySales),
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 24, fontWeight: FontWeight.w800)),
+                    Text(
+                      ugx(state.todaySales),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       '${change >= 0 ? '▲' : '▼'} ${change.abs().toStringAsFixed(0)}% vs yesterday',
-                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ),
@@ -198,66 +454,97 @@ class _DashboardState extends State<_Dashboard> {
           mainAxisSpacing: 12,
           childAspectRatio: 2.1,
           children: [
-            _Quick(Icons.shopping_cart_outlined, 'New Sale',
-                () => Navigator.pushNamed(context, Routes.products)),
-            _Quick(Icons.inventory_2_outlined, 'Inventory',
-                () => Navigator.pushNamed(context, Routes.inventory)),
-            _Quick(Icons.people_outline, 'Customers',
-                () => Navigator.pushNamed(context, Routes.customers)),
-            _Quick(Icons.bar_chart, 'Reports',
-                () => Navigator.pushNamed(context, Routes.reports)),
+            _Quick(
+              Icons.shopping_cart_outlined,
+              'New Sale',
+              () => Navigator.pushNamed(context, Routes.products),
+            ),
+            _Quick(
+              Icons.inventory_2_outlined,
+              'Inventory',
+              () => Navigator.pushNamed(context, Routes.inventory),
+            ),
+            _Quick(
+              Icons.people_outline,
+              'Customers',
+              () => Navigator.pushNamed(context, Routes.customers),
+            ),
+            _Quick(
+              Icons.bar_chart,
+              'Reports',
+              () => Navigator.pushNamed(context, Routes.reports),
+            ),
           ],
         ),
         const SizedBox(height: 18),
-        const Text('Recent Transactions',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+        const Text(
+          'Recent Transactions',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        ),
         const SizedBox(height: 8),
         if (state.recentSales.isEmpty)
           const Padding(
             padding: EdgeInsets.all(16),
             child: Center(child: Text('No transactions yet')),
           ),
-        ...state.recentSales.map((s) => Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE7ECE9)),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF18345A).withValues(alpha: 0.08),
-                    blurRadius: 14,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Icon(methodIcon(s.method), color: primary),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('${s.method} Sale',
-                            style: const TextStyle(fontWeight: FontWeight.w600)),
-                        Text(s.customer,
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                      ],
-                    ),
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+        ...state.recentSales.map(
+          (s) => Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE7ECE9)),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF18345A).withValues(alpha: 0.08),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Icon(methodIcon(s.method), color: primary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(ugx(s.total), style: const TextStyle(fontWeight: FontWeight.w700)),
-                      Text(fmtTime(s.date),
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                      Text(
+                        '${s.method} Sale',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        s.customer,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
                     ],
                   ),
-                ],
-              ),
-            )),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      ugx(s.total),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    Text(
+                      fmtTime(s.date),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -300,7 +587,10 @@ class _Quick extends StatelessWidget {
           children: [
             Icon(icon, color: primary),
             const SizedBox(height: 4),
-            Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
           ],
         ),
       ),
